@@ -1109,13 +1109,13 @@ def safe_get_video(client: YtubeAPIClient, url: str, retries: int = 3):
         await callback_query.answer("🔄 Refreshing statistics...")
         try:
             from plugins.admin import _build_stats
-            _, msg2_html = await _build_stats(client)
+            stats_html = await _build_stats(client)
 
             keyboard = InlineKeyboardMarkup([
                 [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin_refresh_stats", style=ButtonStyle.PRIMARY)],
             ])
             await callback_query.edit_message_text(
-                rich_message=InputRichMessage(html=msg2_html),
+                rich_message=InputRichMessage(html=stats_html),
                 reply_markup=keyboard
             )
         except Exception as e:

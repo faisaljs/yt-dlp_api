@@ -38,11 +38,13 @@ def process_video(item, details):
 
         return {
             "title": title,
+            "video_id": video_id,
             "url": url,
+            "time": format_dur(duration),
+            "duration": format_dur(duration),
             "artist_name": artist,
             "channel_name": channel,
             "views": format(views),
-            "duration": format_dur(duration),
             "thumbnail": thumbnail,
         }
 

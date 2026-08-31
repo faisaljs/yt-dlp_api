@@ -208,8 +208,10 @@ async def _build_stats(client: Client, progress_callback=None):
 
     top_users_table = "".join(top_users_rows) or "<tr><td colspan='4'>No active users today</td></tr>"
 
-    # ── Build Message 1: Overview ──────────────────────────
-    msg1 = f"""<h1>Bot Statistics Dashboard</h1>
+    # ── Build Dashboard ──────────────────────────────────
+    cmd_count_str = f"{total_commands:,}" if isinstance(total_commands, int) else str(total_commands)
+
+    dashboard = f"""<h1>Bot Statistics Dashboard</h1>
 <blockquote>Generated: <b>{now.strftime('%Y-%m-%d %H:%M:%S')} UTC</b> | Bot Uptime: <code>{bot_uptime}</code></blockquote>
 
 <h2>User Metrics</h2>
@@ -244,36 +246,7 @@ async def _build_stats(client: Client, progress_callback=None):
   <tr><td>⚪ <b>Idle</b></td><td>&lt;10 req</td><td>{idle_users}</td></tr>
 </table>
 
-<h2>Failure Analytics</h2>
-<table border="1">
-  <tr><th>Metric</th><th>Value</th></tr>
-  <tr><td><b>Total Failed</b></td><td><b>{global_failed:,}</b></td></tr>
-  <tr><td><b>Success Rate</b></td><td><b>{success_rate}%</b></td></tr>
-</table>
-
-<details>
-  <summary>Error Details &amp; Failing Endpoints</summary>
-  <h3>By Status Code</h3>
-  <table border="1">
-    <tr><th>Status</th><th>Count</th></tr>
-    {status_table_rows}
-  </table>
-  <h3>Top Failing Paths</h3>
-  <table border="1">
-    <tr><th>Path</th><th>Failures</th></tr>
-    {path_table_rows}
-  </table>
-  <h3>Top Failing Users</h3>
-  <table border="1">
-    <tr><th>User</th><th>Failures</th></tr>
-    {fail_user_table_rows}
-  </table>
-</details>"""
-
-    # ── Build Message 2: Top Users + System ────────────────
-    cmd_count_str = f"{total_commands:,}" if isinstance(total_commands, int) else str(total_commands)
-
-    msg2 = f"""<h1>Top 10 Users Today</h1>
+<h2>Top 10 Users Today</h2>
 <table border="1">
   <tr><th>#</th><th>User</th><th>Requests</th><th>Quota</th></tr>
   {top_users_table}
@@ -300,9 +273,35 @@ async def _build_stats(client: Client, progress_callback=None):
   <tr><td><b>System Load</b></td><td>{load_indicator}</td></tr>
   <tr><td><b>Active Ratio</b></td><td>{user_utilization}%</td></tr>
   <tr><td><b>Cache Status</b></td><td><b>Operational</b></td></tr>
-</table>"""
+</table>
 
-    return msg1, msg2
+<h2>Failure Analytics</h2>
+<table border="1">
+  <tr><th>Metric</th><th>Value</th></tr>
+  <tr><td><b>Total Failed</b></td><td><b>{global_failed:,}</b></td></tr>
+  <tr><td><b>Success Rate</b></td><td><b>{success_rate}%</b></td></tr>
+</table>
+
+<details>
+  <summary>Error Details &amp; Failing Endpoints</summary>
+  <h3>By Status Code</h3>
+  <table border="1">
+    <tr><th>Status</th><th>Count</th></tr>
+    {status_table_rows}
+  </table>
+  <h3>Top Failing Paths</h3>
+  <table border="1">
+    <tr><th>Path</th><th>Failures</th></tr>
+    {path_table_rows}
+  </table>
+  <h3>Top Failing Users</h3>
+  <table border="1">
+    <tr><th>User</th><th>Failures</th></tr>
+    {fail_user_table_rows}
+  </table>
+</details>"""
+
+    return dashboard
 
 
 @Client.on_message(filters.command("stats") & filters.private)
@@ -331,20 +330,14 @@ async def bot_stats(client: Client, message: Message):
         # Initial draft
         await progress("Scanning Redis database structure...")
 
-        msg1_html, msg2_html = await _build_stats(client, progress_callback=progress)
-
-        # Send dashboard parts
-        await client.send_rich_message(
-            chat_id=chat_id,
-            rich_message=InputRichMessage(html=msg1_html)
-        )
+        stats_html = await _build_stats(client, progress_callback=progress)
 
         keyboard = InlineKeyboardMarkup([
             [InlineKeyboardButton("🔄 Refresh Stats", callback_data="admin_refresh_stats", style=ButtonStyle.PRIMARY)],
         ])
         await client.send_rich_message(
             chat_id=chat_id,
-            rich_message=InputRichMessage(html=msg2_html),
+            rich_message=InputRichMessage(html=stats_html),
             reply_markup=keyboard
         )
 
