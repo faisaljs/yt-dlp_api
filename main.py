@@ -905,9 +905,27 @@ async def video_info(
             video_id = extract_video_id_from_url(q)
             metadata_task = asyncio.create_task(GetVideoById(video_id)) if video_id else None
 
+            from utils.innertube import related as get_related
+            related_task = asyncio.create_task(get_related(video_id, limit=5)) if video_id else None
+
             stream_url = await _resolve_stream_url_for_info(request, q, redirect)
             metadata_result = await metadata_task if metadata_task else None
             info = metadata_result if isinstance(metadata_result, dict) else {}
+
+            # Fetch related suggestions via Innertube fast path, with fallback to title search
+            suggested = await related_task if related_task else []
+            if not suggested and info.get("title"):
+                try:
+                    from utils.search_service import fetch_results
+                    s_data = await fetch_results(info["title"], limit=5)
+                    curr_vid = info.get("video_id") or video_id
+                    candidates = [
+                        v for v in (s_data.get("main_results", []) + s_data.get("suggested", []))
+                        if v.get("video_id") != curr_vid
+                    ]
+                    suggested = candidates[:5]
+                except Exception:
+                    pass
 
             elapsed = round(time.time() - start_time, 2)
             return JSONResponse(content={
@@ -920,6 +938,7 @@ async def video_info(
                 "video_id": info.get("video_id"),
                 "stream_url": stream_url,
                 "thumbnail": info.get("thumbnail"),
+                "suggested": suggested,
                 "time_taken": f"{elapsed} sec"
             })
         else:
@@ -945,6 +964,7 @@ async def video_info(
                     "video_id": result.get("video_id"),
                     "stream_url": stream_url,
                     "thumbnail": result.get("thumbnail"),
+                    "suggested": search_data.get("suggested", [])[:5],
                     "time_taken": f"{elapsed} sec"
                 })
             else:
@@ -955,6 +975,7 @@ async def video_info(
                     "query_type": "search",
                     "query": q,
                     "results": results,
+                    "suggested": search_data.get("suggested", [])[:5],
                     "total_results": len(results),
                     "time_taken": f"{elapsed} sec"
                 })
@@ -1003,13 +1024,17 @@ async def suggest_songs(
 
     try:
         from utils.search_service import fetch_suggestions
-        results = await fetch_suggestions(q, limit=limit)
+        data = await fetch_suggestions(q, limit=limit)
         elapsed = round(time.time() - start_time, 2)
+
+        main_results = data.get("results", [])
+        suggested = data.get("suggested", [])
 
         return JSONResponse(content={
             "query": q,
-            "results": results,
-            "total_results": len(results),
+            "results": main_results,
+            "suggested": suggested,
+            "total_results": len(main_results) + len(suggested),
             "time_taken": f"{elapsed} sec"
         })
 

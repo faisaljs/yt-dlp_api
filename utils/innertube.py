@@ -196,5 +196,101 @@ async def metadata(url_or_id: str) -> dict | None:
     }
 
 
+_NEXT_URL = f"https://youtubei.googleapis.com/youtubei/v1/next?key={_KEY}"
+
+
+async def related(url_or_id: str, limit: int = 5) -> list[dict]:
+    """Fetch official YouTube recommended/related suggestions for a video."""
+    vid = extract_id(url_or_id)
+    if not vid:
+        return []
+
+    body = orjson.dumps({
+        "videoId": vid,
+        "context": {
+            "client": {
+                "clientName": "WEB",
+                "clientVersion": "2.20240101.00.00",
+                "hl": "en",
+                "gl": "US"
+            }
+        }
+    })
+    try:
+        r = await _client.post(_NEXT_URL, content=body, headers={"Content-Type": "application/json"})
+        if r.status_code != 200:
+            return []
+        data = orjson.loads(r.content)
+    except Exception as e:
+        logger.warning(f"[INNERTUBE] next endpoint failed for {vid}: {e}")
+        return []
+
+    secondary = data.get("contents", {}).get("twoColumnWatchNextResults", {}).get("secondaryResults", {}).get("secondaryResults", {}).get("results", [])
+    items = []
+    for s in secondary:
+        lvm = s.get("lockupViewModel")
+        if lvm:
+            cand_id = lvm.get("contentId")
+            if not cand_id or cand_id == vid:
+                continue
+            title = lvm.get("metadata", {}).get("lockupMetadataViewModel", {}).get("title", {}).get("content", "")
+            metadata_rows = lvm.get("metadata", {}).get("lockupMetadataViewModel", {}).get("metadata", {}).get("contentMetadataViewModel", {}).get("metadataRows", [])
+            channel = ""
+            views = ""
+            duration = ""
+            if len(metadata_rows) > 0:
+                channel_parts = metadata_rows[0].get("metadataParts", [])
+                if channel_parts:
+                    channel = channel_parts[0].get("text", {}).get("content", "")
+            if len(metadata_rows) > 1:
+                views_parts = metadata_rows[1].get("metadataParts", [])
+                if views_parts:
+                    views = views_parts[0].get("text", {}).get("content", "")
+
+            overlays = lvm.get("contentImage", {}).get("thumbnailViewModel", {}).get("overlays", [])
+            for o in overlays:
+                for b in o.get("thumbnailBottomOverlayViewModel", {}).get("badges", []):
+                    badge = b.get("thumbnailBadgeViewModel", {})
+                    if badge.get("text"):
+                        duration = badge.get("text")
+                time_txt = o.get("thumbnailOverlayTimeStatusRenderer", {}).get("text", {}).get("runs", [{}])[0].get("text")
+                if time_txt:
+                    duration = time_txt
+
+            items.append({
+                "title": title,
+                "video_id": cand_id,
+                "url": f"https://www.youtube.com/watch?v={cand_id}",
+                "time": duration,
+                "duration": duration,
+                "channel": channel,
+                "views": views,
+                "thumbnail": f"https://i.ytimg.com/vi/{cand_id}/hqdefault.jpg"
+            })
+        elif "compactVideoRenderer" in s:
+            cvr = s["compactVideoRenderer"]
+            cand_id = cvr.get("videoId")
+            if not cand_id or cand_id == vid:
+                continue
+            title = cvr.get("title", {}).get("simpleText") or cvr.get("title", {}).get("runs", [{}])[0].get("text", "")
+            duration = cvr.get("lengthText", {}).get("simpleText", "")
+            channel = cvr.get("longBylineText", {}).get("runs", [{}])[0].get("text", "")
+            views = cvr.get("viewCountText", {}).get("simpleText", "")
+            items.append({
+                "title": title,
+                "video_id": cand_id,
+                "url": f"https://www.youtube.com/watch?v={cand_id}",
+                "time": duration,
+                "duration": duration,
+                "channel": channel,
+                "views": views,
+                "thumbnail": f"https://i.ytimg.com/vi/{cand_id}/hqdefault.jpg"
+            })
+        if len(items) >= limit:
+            break
+    return items
+
+
 async def close_client() -> None:
     await _client.aclose()
+

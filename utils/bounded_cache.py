@@ -69,5 +69,8 @@ class BoundedCache:
             return default
         return v
 
+    def clear(self):
+        self._data.clear()
+
     def __len__(self) -> int:
         return len(self._data)

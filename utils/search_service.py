@@ -147,23 +147,25 @@ async def fetch_results(query: str, limit: int = 1):
                         continue
                     title_runs = safe_get(v, "title", "runs")
                     title = title_runs[0]["text"] if title_runs else "Unknown"
+                    duration_str = v.get("lengthText", {}).get("simpleText", "LIVE")
                     results.append({
                         "title":     title,
                         "video_id":  video_id,
                         "url":       f"https://www.youtube.com/watch?v={video_id}",
-                        "duration":  v.get("lengthText", {}).get("simpleText", "LIVE"),
+                        "time":      duration_str,
+                        "duration":  duration_str,
                         "channel":   extract_channel_name(v),
                         "views":     format_views(
                             v.get("viewCountText", {}).get("simpleText", "0 views")
                         ),
                         "thumbnail": f"https://i.ytimg.com/vi/{video_id}/hqdefault.jpg",
                     })
-                    if len(results) >= limit + 5:
+                    if len(results) >= limit + 10:
                         break
 
             output = {
                 "main_results": results[:limit],
-                "suggested":    results[limit: limit + 5],
+                "suggested":    results[limit: limit + 5] if len(results) > limit else results[:5],
             }
             MEMORY_CACHE[qkey] = output
             # Fire-and-forget Redis write — don't await to slow down response.
@@ -198,9 +200,12 @@ async def fetch_trending(limit: int = 10):
 
 # ── Suggest ────────────────────────────────────────────────────
 
-async def fetch_suggestions(query: str, limit: int = 10):
+async def fetch_suggestions(query: str, limit: int = 5):
     data = await fetch_results(query, limit=limit)
-    return data.get("suggested", [])
+    return {
+        "results":   data.get("main_results", []),
+        "suggested": data.get("suggested", [])[:5],
+    }
 
 
 __all__ = ["fetch_results", "fetch_trending", "fetch_suggestions", "close_client"]
